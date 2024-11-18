@@ -1,50 +1,66 @@
 import util from 'util';
 import test from 'ava';
-import stdio from '../lib/stdio';
+import normalizeStdio from '../lib/stdio';
 
-util.inspect.styles.name = 'magenta';
-
-function macro(t, input, expected) {
+const macro = (t, input, expected, func) => {
 	if (expected instanceof Error) {
-		t.throws(() => stdio(input), expected.message);
+		t.throws(() => {
+			normalizeStdio(input);
+		}, expected.message);
 		return;
 	}
 
-	const result = stdio(input);
+	t.deepEqual(func(input), expected);
+};
 
-	if (typeof expected === 'object' && expected !== null) {
-		t.deepEqual(result, expected);
-	} else {
-		t.is(result, expected);
-	}
-}
+const macroTitle = name => (title, input) => `${name} ${(util.inspect(input))}`;
 
-macro.title = (providedTitle, input) => providedTitle || util.inspect(input, {colors: true});
+const stdioMacro = (...args) => macro(...args, normalizeStdio);
+stdioMacro.title = macroTitle('execa()');
 
-test(macro, undefined, null);
-test(macro, null, null);
+test(stdioMacro, undefined, undefined);
+test(stdioMacro, null, undefined);
 
-test(macro, {stdio: 'inherit'}, 'inherit');
-test(macro, {stdio: 'pipe'}, 'pipe');
-test(macro, {stdio: 'ignore'}, 'ignore');
-test(macro, {stdio: [0, 1, 2]}, [0, 1, 2]);
+test(stdioMacro, {stdio: 'inherit'}, 'inherit');
+test(stdioMacro, {stdio: 'pipe'}, 'pipe');
+test(stdioMacro, {stdio: 'ignore'}, 'ignore');
+test(stdioMacro, {stdio: [0, 1, 2]}, [0, 1, 2]);
 
-test(macro, {}, [null, null, null]);
-test(macro, {stdio: []}, [null, null, null]);
-test(macro, {stdin: 'pipe'}, ['pipe', null, null]);
-test(macro, {stdout: 'ignore'}, [null, 'ignore', null]);
-test(macro, {stderr: 'inherit'}, [null, null, 'inherit']);
-test(macro, {stdin: 'pipe', stdout: 'ignore', stderr: 'inherit'}, ['pipe', 'ignore', 'inherit']);
-test(macro, {stdin: 'pipe', stdout: 'ignore'}, ['pipe', 'ignore', null]);
-test(macro, {stdin: 'pipe', stderr: 'inherit'}, ['pipe', null, 'inherit']);
-test(macro, {stdout: 'ignore', stderr: 'inherit'}, [null, 'ignore', 'inherit']);
-test(macro, {stdin: 0, stdout: 1, stderr: 2}, [0, 1, 2]);
-test(macro, {stdin: 0, stdout: 1}, [0, 1, null]);
-test(macro, {stdin: 0, stderr: 2}, [0, null, 2]);
-test(macro, {stdout: 1, stderr: 2}, [null, 1, 2]);
+test(stdioMacro, {}, [undefined, undefined, undefined]);
+test(stdioMacro, {stdio: []}, [undefined, undefined, undefined]);
+test(stdioMacro, {stdin: 'pipe'}, ['pipe', undefined, undefined]);
+test(stdioMacro, {stdout: 'ignore'}, [undefined, 'ignore', undefined]);
+test(stdioMacro, {stderr: 'inherit'}, [undefined, undefined, 'inherit']);
+test(stdioMacro, {stdin: 'pipe', stdout: 'ignore', stderr: 'inherit'}, ['pipe', 'ignore', 'inherit']);
+test(stdioMacro, {stdin: 'pipe', stdout: 'ignore'}, ['pipe', 'ignore', undefined]);
+test(stdioMacro, {stdin: 'pipe', stderr: 'inherit'}, ['pipe', undefined, 'inherit']);
+test(stdioMacro, {stdout: 'ignore', stderr: 'inherit'}, [undefined, 'ignore', 'inherit']);
+test(stdioMacro, {stdin: 0, stdout: 1, stderr: 2}, [0, 1, 2]);
+test(stdioMacro, {stdin: 0, stdout: 1}, [0, 1, undefined]);
+test(stdioMacro, {stdin: 0, stderr: 2}, [0, undefined, 2]);
+test(stdioMacro, {stdout: 1, stderr: 2}, [undefined, 1, 2]);
 
-test(macro, {stdio: {foo: 'bar'}}, new TypeError('Expected `stdio` to be of type `string` or `Array`, got `object`'));
+test(stdioMacro, {stdio: {foo: 'bar'}}, new TypeError('Expected `stdio` to be of type `string` or `Array`, got `object`'));
 
-test(macro, {stdin: 'inherit', stdio: 'pipe'}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
-test(macro, {stdin: 'inherit', stdio: ['pipe']}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
-test(macro, {stdin: 'inherit', stdio: [undefined, 'pipe']}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
+test(stdioMacro, {stdin: 'inherit', stdio: 'pipe'}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
+test(stdioMacro, {stdin: 'inherit', stdio: ['pipe']}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
+test(stdioMacro, {stdin: 'inherit', stdio: [undefined, 'pipe']}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
+test(stdioMacro, {stdin: 0, stdio: 'pipe'}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
+
+const forkMacro = (...args) => macro(...args, normalizeStdio.node);
+forkMacro.title = macroTitle('execa.fork()');
+
+test(forkMacro, undefined, [undefined, undefined, undefined, 'ipc']);
+test(forkMacro, {stdio: 'ignore'}, ['ignore', 'ignore', 'ignore', 'ipc']);
+test(forkMacro, {stdio: 'ipc'}, 'ipc');
+test(forkMacro, {stdio: [0, 1, 2]}, [0, 1, 2, 'ipc']);
+test(forkMacro, {stdio: [0, 1, 2, 3]}, [0, 1, 2, 3, 'ipc']);
+test(forkMacro, {stdio: [0, 1, 2, 'ipc']}, [0, 1, 2, 'ipc']);
+
+test(forkMacro, {stdio: [0, 1, undefined]}, [0, 1, undefined, 'ipc']);
+test(forkMacro, {stdio: [0, 1, 2, undefined]}, [0, 1, 2, undefined, 'ipc']);
+test(forkMacro, {stdout: 'ignore'}, [undefined, 'ignore', undefined, 'ipc']);
+test(forkMacro, {stdout: 'ignore', stderr: 'ignore'}, [undefined, 'ignore', 'ignore', 'ipc']);
+
+test(forkMacro, {stdio: {foo: 'bar'}}, new TypeError('Expected `stdio` to be of type `string` or `Array`, got `object`'));
+test(forkMacro, {stdin: 'inherit', stdio: 'pipe'}, new Error('It\'s not possible to provide `stdio` in combination with one of `stdin`, `stdout`, `stderr`'));
